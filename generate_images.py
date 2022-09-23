@@ -9,20 +9,6 @@ batches = [
     '../../batch/data_batch_5'
     ]
 
-def resizeImage(srcfile, new_width=32, new_height=32):
-    '''
-    Resize and crop a image to desired resolution and return the 
-    data as HWC format numpy array.
-    srcfile: the source image file path.
-    new_width: new desired width.
-    new_height: new desired height.
-    '''
-    pil_image = Image.open(srcfile)
-    pil_image = ImageOps.fit(pil_image, (new_width, new_height), Image.ANTIALIAS)
-    pil_image_rgb = pil_image.convert('RGB')
-    return np.asarray(pil_image_rgb).flatten()
-
-
 generated_labels = {
     0: 0,
     1: 0,
@@ -66,8 +52,6 @@ with open('inputs.h', 'w') as f:
             if current_num == 100:
                 continue
             f.write("#define IMG_DATA{}".format(count+1) + " {")
-            # if count > 0:
-            #     f.write(",")
             f.write(",".join(arrstr) )
             f.write("}\n\n") 
             generated_labels[label] = current_num + 1
@@ -75,9 +59,7 @@ with open('inputs.h', 'w') as f:
                 scanning = False
                 break
             count+=1
-        # print(len(data[b'data'][0]))
         break
-        # print(data.keys())
     
     f.write("#define IMG_VECTOR {")
     for i in range(1000):
