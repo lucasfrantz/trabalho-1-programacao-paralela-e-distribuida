@@ -2,11 +2,11 @@ import pickle
 from PIL import Image, ImageOps
 import numpy as np
 batches = [
-    './batch/data_batch_1',
-    './batch/data_batch_2',
-    './batch/data_batch_3',
-    './batch/data_batch_4',
-    './batch/data_batch_5'
+    '../../batch/data_batch_1',
+    '../../batch/data_batch_2',
+    '../../batch/data_batch_3',
+    '../../batch/data_batch_4',
+    '../../batch/data_batch_5'
     ]
 
 def resizeImage(srcfile, new_width=32, new_height=32):
@@ -50,7 +50,7 @@ def is_over():
     return True
 
 with open('inputs.h', 'w') as f:   
-    f.write("#define IMG_DATA {") 
+    
     count = 0
     for batch in batches:
         if not scanning :
@@ -65,9 +65,11 @@ with open('inputs.h', 'w') as f:
             current_num = generated_labels[label]
             if current_num == 100:
                 continue
-            if count > 0:
-                f.write(",")
-            f.write("{" + ",".join(arrstr) + "}")
+            f.write("#define IMG_DATA{}".format(count+1) + " {")
+            # if count > 0:
+            #     f.write(",")
+            f.write(",".join(arrstr) )
+            f.write("}\n\n") 
             generated_labels[label] = current_num + 1
             if is_over():
                 scanning = False
@@ -76,4 +78,11 @@ with open('inputs.h', 'w') as f:
         # print(len(data[b'data'][0]))
         break
         # print(data.keys())
-    f.write("}\n") 
+    
+    f.write("#define IMG_VECTOR {")
+    for i in range(1000):
+        if( i > 0):
+            f.write(",")
+        f.write("IMG_DATA{}".format(i+1))
+        
+    f.write("}\n\n")
