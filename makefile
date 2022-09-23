@@ -26,5 +26,5 @@ $(NN_DIR)/Source/PoolingFunctions/arm_pool_q7_HWC.c \
 -I$(NN_DIR)/Include \
 
 sequencial:
-	$(CC) arm_nnexamples_cifar10.cpp $(FILES) $(APPINCLUDE) -o sequencial.run
+	$(CC) cifar10.cpp $(FILES) $(APPINCLUDE) -o sequencial.run
 # cd .. && ls
