@@ -391,12 +391,12 @@ arm_convolve_HWC_q7_fast(const q7_t * Im_in,
         {
             for (j = dim_im_out_p * tid; j < dim_im_out; j++)
             {
-                for (k = dim_im_out * tid; k < dim_im_out; k++)
+                for (k = dim_im_out_p * tid; k < dim_im_out; k++)
                 {
                     conv_out = (bias[i] << bias_shift) + NN_ROUND(out_shift);
-                    for (m = dim_kernel * tid; m < dim_kernel; m++)
+                    for (m = dim_kernel_p * tid; m < dim_kernel; m++)
                     {
-                        for (n = dim_kernel * tid; n < dim_kernel; n++)
+                        for (n = dim_kernel_p * tid; n < dim_kernel; n++)
                         {
                             // if-for implementation
                             in_row = stride * j + m - padding;

@@ -35,6 +35,29 @@
 #include "arm_math.h"
 #include "arm_nnfunctions.h"
 
+// int conv_out;
+q7_t * Im_in_g;
+q7_t * wt_g;
+uint16_t padding_g;
+uint16_t stride_g;
+q7_t * bias_g;
+uint16_t bias_shift_g;
+uint16_t out_shift_g;
+q7_t * Im_out_g;
+q15_t * bufferA_g;
+q7_t * bufferB_g;
+uint16_t ch_im_out_g;
+uint16_t dim_im_in_g;
+uint16_t dim_im_out_g;
+uint16_t dim_kernel_g;
+uint16_t ch_im_in_g;
+
+int ch_im_out_p;
+int dim_im_in_p;
+int dim_im_out_p;
+int dim_kernel_p;
+int ch_im_in_p;
+
 // int NUM_THREADS = 1;
 
 /**
@@ -45,6 +68,44 @@
  * @addtogroup NNConv
  * @{
  */
+
+void *convLayer(void *threadId){
+    int tid = (int)threadId;
+    uint16_t  i, j, k, l, m, n;
+    int       conv_out;
+    signed char in_row, in_col;
+    for (i = ch_im_out_p * tid; i < ch_im_out_g; i++)
+        {
+            for (j = dim_im_out_p * tid; j < dim_im_out_g; j++)
+            {
+                for (k = dim_im_out_p * tid; k < dim_im_out_g; k++)
+                {
+                    conv_out = (bias_g[i] << bias_shift_g) + NN_ROUND(out_shift_g);
+                    for (m = dim_kernel_p * tid; m < dim_kernel_g; m++)
+                    {
+                        for (n = dim_kernel_p * tid; n < dim_kernel_g; n++)
+                        {
+                            // if-for implementation
+                            in_row = stride_g * j + m - padding_g;
+                            in_col = stride_g * k + n - padding_g;
+                            if (in_row >= 0 && in_col >= 0 && in_row < dim_im_in_p && in_col < dim_im_in_p)
+                            {
+                                for (l = ch_im_in_p * tid; l < ch_im_in_p; l++)
+                                {
+                                    conv_out +=
+                                        Im_in_g[(in_row * dim_im_in_p + in_col) * ch_im_in_p +
+                                            l] * wt_g[i * ch_im_in_p * dim_kernel_p * dim_kernel_p + (m * dim_kernel_p +
+                                                                                                n) * ch_im_in_p + l];
+                                }
+                            }
+                        }
+                    }
+                    Im_out_g[i + (j * dim_im_out_p + k) * ch_im_out_p] = (q7_t) __SSAT((conv_out >> out_shift_g), 8);
+                }
+            }
+        }
+        return;
+}
 
   /**
    * @brief Fast Q7 convolution function
@@ -112,258 +173,12 @@ arm_convolve_HWC_q7_fast(const q7_t * Im_in,
                          q7_t * bufferB)
 {
     (void)bufferB;
-#if defined (ARM_MATH_DSP)
-    /* Run the following code for Cortex-M4 and Cortex-M7 */
 
-    int16_t   i_out_y, i_out_x, i_ker_y, i_ker_x;
 
-    /*
-     *  Here we use bufferA as q15_t internally as computation are done with q15_t level
-     *  im2col are done to output in q15_t format from q7_t input
-     */
-
-    q15_t    *pBuffer = bufferA;
-    q7_t     *pOut = Im_out;
-
-    if (ch_im_in % 4 != 0 || ch_im_out % 2 != 0)
-    {
-        /* check if the input dimension meets the constraints */
-        return ARM_MATH_SIZE_MISMATCH;
-    }
-
-    /*
-     *  Here we split the entire matrix into three regions depending on the padding situation
-     *    Top: i_out_y from 0 to padding - 1
-     * Middle: i_out_y from padding to dim_im_out-padding-1
-     * Bottom: i_out_y from dim_im_out-padding to dim_im_out-1
-     */
-
-    /* top part */
-    for (i_out_y = 0; i_out_y < padding; i_out_y++)
-    {
-        for (i_out_x = 0; i_out_x < dim_im_out; i_out_x++)
-        {
-            /* This part implements the im2col function */
-            for (i_ker_y = i_out_y * stride - padding; i_ker_y < i_out_y * stride - padding + dim_kernel; i_ker_y++)
-            {
-                for (i_ker_x = i_out_x * stride - padding; i_ker_x < i_out_x * stride - padding + dim_kernel; i_ker_x++)
-                {
-                    if (i_ker_y < 0 || i_ker_y >= dim_im_in || i_ker_x < 0 || i_ker_x >= dim_im_in)
-                    {
-                        /* arm_fill_q15(0, pBuffer, ch_im_in); */
-                        memset(pBuffer, 0, sizeof(q15_t)*ch_im_in);
-                    } else
-                    {
-                        arm_q7_to_q15_reordered_no_shift
-                            ((q7_t *) Im_in + (i_ker_y * dim_im_in + i_ker_x) * ch_im_in, pBuffer, ch_im_in);
-                    }
-                    pBuffer += ch_im_in;
-                }
-            }
-
-            if (pBuffer == bufferA + 2 * ch_im_in * dim_kernel * dim_kernel)
-            {
-                pOut =
-                    arm_nn_mat_mult_kernel_q7_q15_reordered(wt,
-                                                            bufferA,
-                                                            ch_im_out,
-                                                            ch_im_in
-                                                            *
-                                                            dim_kernel * dim_kernel, bias_shift, out_shift, bias, pOut);
-                /* counter reset */
-                pBuffer = bufferA;
-            }
-        }
-    }
-
-    /* middle part, here we also divide the x into left, mid and right */
-    for (; i_out_y < dim_im_out - padding; i_out_y++)
-    {
-
-        /* left part */
-        for (i_out_x = 0; i_out_x < padding; i_out_x++)
-        {
-            /* This part implements the im2col function */
-            for (i_ker_y = i_out_y * stride - padding; i_ker_y < i_out_y * stride - padding + dim_kernel; i_ker_y++)
-            {
-                for (i_ker_x = i_out_x * stride - padding; i_ker_x < i_out_x * stride - padding + dim_kernel; i_ker_x++)
-                {
-                    if (i_ker_x < 0 || i_ker_x >= dim_im_in)
-                    {
-                        /* arm_fill_q15(0, pBuffer, ch_im_in); */
-                        memset(pBuffer, 0, sizeof(q15_t)*ch_im_in);
-                    } else
-                    {
-                        arm_q7_to_q15_reordered_no_shift
-                            ((q7_t *) Im_in + (i_ker_y * dim_im_in + i_ker_x) * ch_im_in, pBuffer, ch_im_in);
-                    }
-                    pBuffer += ch_im_in;
-                }
-            }
-
-            if (pBuffer == bufferA + 2 * ch_im_in * dim_kernel * dim_kernel)
-            {
-                pOut =
-                    arm_nn_mat_mult_kernel_q7_q15_reordered(wt,
-                                                            bufferA,
-                                                            ch_im_out,
-                                                            ch_im_in
-                                                            *
-                                                            dim_kernel * dim_kernel, bias_shift, out_shift, bias, pOut);
-                /* counter reset */
-                pBuffer = bufferA;
-            }
-        }
-
-        /* mid part */
-        for (; i_out_x < dim_im_out - padding; i_out_x++)
-        {
-            /* This part implements the im2col function */
-            for (i_ker_y = i_out_y * stride - padding; i_ker_y < i_out_y * stride - padding + dim_kernel; i_ker_y++)
-            {
-                arm_q7_to_q15_reordered_no_shift((q7_t *) Im_in
-                                                 +
-                                                 (i_ker_y *
-                                                  dim_im_in +
-                                                  i_out_x *
-                                                  stride - padding) * ch_im_in, pBuffer, ch_im_in * dim_kernel);
-                pBuffer += ch_im_in * dim_kernel;
-            }
-
-            if (pBuffer == bufferA + 2 * ch_im_in * dim_kernel * dim_kernel)
-            {
-                pOut =
-                    arm_nn_mat_mult_kernel_q7_q15_reordered(wt,
-                                                            bufferA,
-                                                            ch_im_out,
-                                                            ch_im_in
-                                                            *
-                                                            dim_kernel * dim_kernel, bias_shift, out_shift, bias, pOut);
-                /* counter reset */
-                pBuffer = bufferA;
-            }
-        }
-
-        /* right part */
-        for (; i_out_x < dim_im_out; i_out_x++)
-        {
-            /* This part implements the im2col function */
-            for (i_ker_y = i_out_y * stride - padding; i_ker_y < i_out_y * stride - padding + dim_kernel; i_ker_y++)
-            {
-                for (i_ker_x = i_out_x * stride - padding; i_ker_x < i_out_x * stride - padding + dim_kernel; i_ker_x++)
-                {
-                    if (i_ker_x < 0 || i_ker_x >= dim_im_in)
-                    {
-                        /* arm_fill_q15(0, pBuffer, ch_im_in); */
-                        memset(pBuffer, 0, sizeof(q15_t)*ch_im_in);
-                    } else
-                    {
-                        arm_q7_to_q15_reordered_no_shift
-                            ((q7_t *) Im_in + (i_ker_y * dim_im_in + i_ker_x) * ch_im_in, pBuffer, ch_im_in);
-                    }
-                    pBuffer += ch_im_in;
-                }
-            }
-
-            if (pBuffer == bufferA + 2 * ch_im_in * dim_kernel * dim_kernel)
-            {
-                pOut =
-                    arm_nn_mat_mult_kernel_q7_q15_reordered(wt,
-                                                            bufferA,
-                                                            ch_im_out,
-                                                            ch_im_in
-                                                            *
-                                                            dim_kernel * dim_kernel, bias_shift, out_shift, bias, pOut);
-                /* counter reset */
-                pBuffer = bufferA;
-            }
-        }
-    }
-
-    for (; i_out_y < dim_im_out; i_out_y++)
-    {
-        for (i_out_x = 0; i_out_x < dim_im_out; i_out_x++)
-        {
-            /* This part implements the im2col function */
-            for (i_ker_y = i_out_y * stride - padding; i_ker_y < i_out_y * stride - padding + dim_kernel; i_ker_y++)
-            {
-                for (i_ker_x = i_out_x * stride - padding; i_ker_x < i_out_x * stride - padding + dim_kernel; i_ker_x++)
-                {
-                    if (i_ker_y < 0 || i_ker_y >= dim_im_in || i_ker_x < 0 || i_ker_x >= dim_im_in)
-                    {
-                        /* arm_fill_q15(0, pBuffer, ch_im_in); */
-                        memset(pBuffer, 0, sizeof(q15_t)*ch_im_in);
-                    } else
-                    {
-                        arm_q7_to_q15_reordered_no_shift
-                            ((q7_t *) Im_in + (i_ker_y * dim_im_in + i_ker_x) * ch_im_in, pBuffer, ch_im_in);
-                    }
-                    pBuffer += ch_im_in;
-                }
-            }
-
-            if (pBuffer == bufferA + 2 * ch_im_in * dim_kernel * dim_kernel)
-            {
-                pOut =
-                    arm_nn_mat_mult_kernel_q7_q15_reordered(wt,
-                                                            bufferA,
-                                                            ch_im_out,
-                                                            ch_im_in
-                                                            *
-                                                            dim_kernel * dim_kernel, bias_shift, out_shift, bias, pOut);
-                /* counter reset */
-                pBuffer = bufferA;
-            }
-        }
-    }
-
-    /* check if there is left-over for compute */
-    if (pBuffer != bufferA)
-    {
-        const q7_t *pA = wt;
-        int       i;
-
-        for (i = 0; i < ch_im_out; i++)
-        {
-            q31_t     sum = ((q31_t)bias[i] << bias_shift) + NN_ROUND(out_shift);
-            const q15_t *pB = bufferA;
-            /* each time it process 4 entries */
-            uint16_t  colCnt = ch_im_in * dim_kernel * dim_kernel >> 2;
-
-            while (colCnt)
-            {
-
-                q31_t     inA1, inA2;
-                q31_t     inB1, inB2;
-
-                pA = read_and_pad_reordered(pA, &inA1, &inA2);
-
-                inB1 = arm_nn_read_q15x2_ia(&pB);
-                sum = __SMLAD(inA1, inB1, sum);
-                inB2 = arm_nn_read_q15x2_ia(&pB);
-                sum = __SMLAD(inA2, inB2, sum);
-
-                colCnt--;
-            }
-            colCnt = ch_im_in * dim_kernel * dim_kernel & 0x3;
-            while (colCnt)
-            {
-                q7_t      inA1 = *pA++;
-                q15_t     inB1 = *pB++;
-                sum += inA1 * inB1;
-                colCnt--;
-            }
-            *pOut = (q7_t) __SSAT((sum >> out_shift), 8);
-            pOut++;
-
-        }
-
-    }
-#else
     /* Run the following code as reference implementation for Cortex-M0 and Cortex-M3 */
 
     uint16_t  i, j, k, l, m, n;
-    int       conv_out;
+    
     signed char in_row, in_col;
 
     if (ch_im_in % 4 != 0 || ch_im_out % 2 != 0)
@@ -372,54 +187,44 @@ arm_convolve_HWC_q7_fast(const q7_t * Im_in,
         return ARM_MATH_SIZE_MISMATCH;
     }
 
+    Im_in_g = Im_in;
+    wt_g = wt;
+    padding_g = padding;
+    stride_g = stride;
+    bias_g = bias;
+    bias_shift_g = bias_shift;
+    out_shift_g = out_shift;
+    Im_out_g = Im_out;
+    bufferA_g = bufferA;
+    bufferB_g = bufferB;
+
+    int *index = NULL;
+    pthread_t *ptr;
     int n_thread = int(NUM_THREADS);
 // int n_thread = NUM_THREADS, tid = -1;
     int tid = -1;
-    int ch_im_out_p = ch_im_out/n_thread;
-    int dim_im_in_p = dim_im_in/n_thread;
-    int dim_im_out_p = dim_im_out/n_thread;
-    int dim_kernel_p = dim_kernel/n_thread;
-    int ch_im_in_p = ch_im_in/n_thread;
-    #pragma omp parallel if(n_thread >= 1) num_threads(n_thread) default(shared) private(tid, i, j, k, in_row, in_col, conv_out, n, l) \
-                                                    shared(n_thread, ch_im_out, dim_im_out, bias, bias_shift, out_shift, dim_kernel, stride, padding, \
-                                                    dim_im_in, ch_im_in, Im_in, Im_out)
-    {
-        tid = omp_get_thread_num();
+    ch_im_out_p = ch_im_out/n_thread;
+    dim_im_in_p = dim_im_in/n_thread;
+    dim_im_out_p = dim_im_out/n_thread;
+    dim_kernel_p = dim_kernel/n_thread;
+    ch_im_in_p = ch_im_in/n_thread;
 
+    index = calloc (n_thread, sizeof (int));
+	for(i = 0; i < n_thread; i++)
+	{
+		index[i] = i;
+	}
 
-        for (i = ch_im_out_p * tid; i < ch_im_out; i++)
-        {
-            for (j = dim_im_out_p * tid; j < dim_im_out; j++)
-            {
-                for (k = dim_im_out * tid; k < dim_im_out; k++)
-                {
-                    conv_out = (bias[i] << bias_shift) + NN_ROUND(out_shift);
-                    for (m = dim_kernel * tid; m < dim_kernel; m++)
-                    {
-                        for (n = dim_kernel * tid; n < dim_kernel; n++)
-                        {
-                            // if-for implementation
-                            in_row = stride * j + m - padding;
-                            in_col = stride * k + n - padding;
-                            if (in_row >= 0 && in_col >= 0 && in_row < dim_im_in_p && in_col < dim_im_in_p)
-                            {
-                                for (l = ch_im_in_p * tid; l < ch_im_in_p; l++)
-                                {
-                                    conv_out +=
-                                        Im_in[(in_row * dim_im_in_p + in_col) * ch_im_in_p +
-                                            l] * wt[i * ch_im_in_p * dim_kernel_p * dim_kernel_p + (m * dim_kernel_p +
-                                                                                                n) * ch_im_in_p + l];
-                                }
-                            }
-                        }
-                    }
-                    Im_out[i + (j * dim_im_out_p + k) * ch_im_out_p] = (q7_t) __SSAT((conv_out >> out_shift), 8);
-                }
-            }
-        }
-    }
+	ptr = malloc(sizeof(pthread_t)*n_thread);
+	for(i = 0; i < n_thread; i++)
+	{
+		printf ("%s: create thread %d!\n", __func__, i+1);
+		pthread_create(&ptr[i], NULL, convLayer, (void*) index[i]);
+	}
 
-#endif                          /* ARM_MATH_DSP */
+    for(i = 0; i < n_thread; i++){
+		pthread_join(ptr[i], NULL);
+	}
 
     /* Return to application */
     return ARM_MATH_SUCCESS;

@@ -7,7 +7,9 @@ OPEN_MP_CLANG=-fopenmp=libomp
 N_THREAD=3
 
 COMPILE_OPEN_MP=-DOPEN_MP
+COMPILE_PTHREAD=-DPTHREAD
 
+PERMISSIVE=-fpermissive
 
 C_FLAGS=-I/usr/lib/gcc/x86_64-linux-gnu/11/include/omp.h
 
@@ -33,6 +35,13 @@ $(NN_DIR)/Source/PoolingFunctions/arm_pool_q7_HWC.c \
 
 FILES:= $(NN_DIR)/Source/ActivationFunctions/arm_relu_q7.c \
 $(APP_ROOT)/arm_convolve_HWC_q7_fast.cpp \
+$(NN_DIR)/Source/ConvolutionFunctions/arm_convolve_HWC_q7_RGB.c \
+$(NN_DIR)/Source/FullyConnectedFunctions/arm_fully_connected_q7_opt.c \
+$(NN_DIR)/Source/SoftmaxFunctions/arm_softmax_q7.c \
+$(NN_DIR)/Source/PoolingFunctions/arm_pool_q7_HWC.c \
+
+FILES_PTHREAD:= $(NN_DIR)/Source/ActivationFunctions/arm_relu_q7.c \
+$(APP_ROOT)/arm_convolve_HWC_q7_fast_pthread.cpp \
 $(NN_DIR)/Source/ConvolutionFunctions/arm_convolve_HWC_q7_RGB.c \
 $(NN_DIR)/Source/FullyConnectedFunctions/arm_fully_connected_q7_opt.c \
 $(NN_DIR)/Source/SoftmaxFunctions/arm_softmax_q7.c \
@@ -71,4 +80,26 @@ open_mp_3_clang:
 open_mp_4_clang:
 	$(CLANG) cifar10.c $(COMPILE_OPEN_MP) -D NUM_THREADS=4 -lm $(C_FLAGS) $(OPEN_MP) $(OPEN_MP_CLANG) $(FILES) $(APPINCLUDE) -o sequencial.run
 
-# cd .. && ls
+pthread_1_gcc:
+	$(CC) cifar10.c $(COMPILE_PTHREAD) $(PERMISSIVE) -D NUM_THREADS=1 -lm $(OPEN_MP) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_2_gcc:
+	$(CC) cifar10.c $(COMPILE_PTHREAD) $(PERMISSIVE) -D NUM_THREADS=2 -lm $(OPEN_MP) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_3_gcc:
+	$(CC) cifar10.c $(COMPILE_PTHREAD) $(PERMISSIVE) -D NUM_THREADS=3 -lm $(OPEN_MP) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_4_gcc:
+	$(CC) cifar10.c $(COMPILE_PTHREAD) $(PERMISSIVE) -D NUM_THREADS=4 -lm $(OPEN_MP) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_1_clang:
+	$(CLANG) cifar10.c $(COMPILE_PTHREAD) -D NUM_THREADS=1 -lm $(C_FLAGS) $(OPEN_MP) $(OPEN_MP_CLANG) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_2_clang:
+	$(CLANG) cifar10.c $(COMPILE_PTHREAD) -D NUM_THREADS=2 -lm $(C_FLAGS) $(OPEN_MP) $(OPEN_MP_CLANG) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_3_clang:
+	$(CLANG) cifar10.c $(COMPILE_PTHREAD) -D NUM_THREADS=3 -lm $(C_FLAGS) $(OPEN_MP) $(OPEN_MP_CLANG) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
+
+pthread_4_clang:
+	$(CLANG) cifar10.c $(COMPILE_PTHREAD) -D NUM_THREADS=4 -lm $(C_FLAGS) $(OPEN_MP) $(OPEN_MP_CLANG) $(FILES_PTHREAD) $(APPINCLUDE) -o sequencial.run
