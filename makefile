@@ -54,7 +54,7 @@ $(NN_DIR)/Source/PoolingFunctions/arm_pool_q7_HWC.c \
 -I$(NN_DIR)/Include \
 
 sequencial:
-	$(CC) cifar10.c -D NUM_THREADS=$(N_THREAD) -lm $(OPEN_MP) $(FILES) $(APPINCLUDE) -o sequencial.run
+	$(CC) cifar10.c -D NUM_THREADS=1 -lm $(OPEN_MP) $(FILES) $(APPINCLUDE) -o sequencial.run
 
 open_mp_1_gcc:
 	$(CC) cifar10.c $(COMPILE_OPEN_MP) -D NUM_THREADS=1 -lm $(OPEN_MP) $(FILES) $(APPINCLUDE) -o sequencial.run

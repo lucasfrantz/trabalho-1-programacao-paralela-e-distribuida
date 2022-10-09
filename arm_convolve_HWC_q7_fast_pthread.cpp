@@ -218,7 +218,6 @@ arm_convolve_HWC_q7_fast(const q7_t * Im_in,
 	ptr = malloc(sizeof(pthread_t)*n_thread);
 	for(i = 0; i < n_thread; i++)
 	{
-		printf ("%s: create thread %d!\n", __func__, i+1);
 		pthread_create(&ptr[i], NULL, convLayer, (void*) index[i]);
 	}
 
